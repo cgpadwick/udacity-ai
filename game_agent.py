@@ -368,9 +368,8 @@ class AlphaBetaPlayer(IsolationPlayer):
         try:
             # The try/except block will automatically catch the exception
             # raised when the timer is about to expire.
-            #for depth in range(0, 10000):
-            #    self.best_move = self.alphabeta(game, depth)
-            self.best_move = self.alphabeta(game, self.search_depth)
+            for depth in range(0, 10000):
+                self.best_move = self.alphabeta(game, depth)
 
         except SearchTimeout:
             pass
@@ -393,11 +392,8 @@ class AlphaBetaPlayer(IsolationPlayer):
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
 
-        if current_depth == 0:
+        if current_depth == 0 or self._terminal_test(game_state):
             return self.score(game_state, self)
-
-        if self._terminal_test(game_state):
-            return float("inf")
 
         v = float("inf")
         for m in game_state.get_legal_moves():
@@ -416,11 +412,8 @@ class AlphaBetaPlayer(IsolationPlayer):
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
 
-        if current_depth == 0:
+        if current_depth == 0 or self._terminal_test(game_state):
             return self.score(game_state, self)
-
-        if self._terminal_test(game_state):
-            return float("-inf")
 
         v = float("-inf")
         for m in game_state.get_legal_moves():
@@ -479,17 +472,21 @@ class AlphaBetaPlayer(IsolationPlayer):
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
 
-        v = float("-inf")
+        self.best_value = float("-inf")
+        self.best_move = (-1, -1)
+        if game.get_legal_moves():
+            self.best_move = game.get_legal_moves()[0]
+
         legal_moves = game.get_legal_moves()
         for move in legal_moves:
-            v = self._max_value(game.forecast_move(move), depth - 1, alpha, beta)
-            self._update_best_move(v, move)
+            v = self._min_value(game.forecast_move(move), depth - 1, alpha, beta)
+            if v >= beta:
+                self.best_move = move
+                self.best_value = v
+            if v > self.best_value:
+                self.best_value = v
+                self.best_move = move
+            alpha = max(alpha, v)
 
         return self.best_move
-
-
-        #for move in game.get_legal_moves():
-        #    if self.score(game.forecast_move(move), self) == v:
-        #        return move
-
 
