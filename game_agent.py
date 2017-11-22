@@ -13,6 +13,18 @@ class SearchTimeout(Exception):
     pass
 
 
+def opponent_distance(game, player):
+    """
+    A method to compute the distance to our opponent.
+    :param game: isolation.Board object
+    :param player: object
+    :return: distance to opponent
+    """
+    myy, myx = game.get_player_location(player)
+    oppy, oppx = game.get_player_location(game.get_opponent(player))
+    return float((oppy - myy) ** 2 + (myx - oppx) ** 2)
+
+
 def custom_score(game, player):
     """Calculate the heuristic value of a game state from the point of view
     of the given player.
@@ -37,29 +49,32 @@ def custom_score(game, player):
     float
         The heuristic value of the current game state to the specified player.
     """
-    #
 
-    #return float(my_moves - opponent_moves)
+    if game.is_loser(player):
+        return float("-inf")
 
-    #if game.is_loser(player):
-    #    return float("-inf")
+    if game.is_winner(player):
+        return float("inf")
 
-    #if game.is_winner(player):
-    #    return float("inf")
+    own_moves = game.get_legal_moves(player)
+    opp_moves = game.get_legal_moves(game.get_opponent(player))
+    num_blocking_moves = 0
+    # Compute how many of my moves can be blocked by my opponent.
+    for mymove in own_moves:
+        if mymove in opp_moves:
+            num_blocking_moves += 1
 
-    #return game.get_legal_moves(player)[0]
+    # Figure out how many of my moves are blocked by spaces that have already been
+    # occupied.
+    blocked_spaces = [(i, j) for j in range(game.width) for i in range(game.height)
+             if game._board_state[i + j * game.height] != game.BLANK]
+    num_blocked_moves = 0
+    for mymove in own_moves:
+        if mymove in blocked_spaces:
+            num_blocked_moves += 1
 
-    own_moves = len(game.get_legal_moves(player))
-    opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
-    return float(own_moves)
-
-    # legal_moves = game.get_legal_moves()
-    # if not legal_moves:
-    #     return (-1, -1)
-    # return legal_moves[randint(0, len(legal_moves) - 1)]
-
-    #return float(len(game.get_legal_moves(player)))
-    #return 1.0 / (len(game.get_legal_moves(game.get_opponent(player))) + 1e-6)
+    # I call this metric "conservative" in the analysis paper.
+    return float(len(own_moves) - len(opp_moves) - num_blocking_moves - num_blocked_moves)
 
 def custom_score_2(game, player):
     """Calculate the heuristic value of a game state from the point of view
@@ -89,9 +104,8 @@ def custom_score_2(game, player):
     if game.is_winner(player):
         return float("inf")
 
-    own_moves = len(game.get_legal_moves(player))
-    opp_moves = len(game.get_legal_moves(game.get_opponent(player)))
-    return float(own_moves - opp_moves)
+    # I call this metric "self-preserving" in the analysis paper.
+    return opponent_distance(game, player) - float(len(game.get_legal_moves(player)))
 
 
 def custom_score_3(game, player):
@@ -122,9 +136,16 @@ def custom_score_3(game, player):
     if game.is_winner(player):
         return float("inf")
 
-    w, h = game.width / 2., game.height / 2.
-    y, x = game.get_player_location(player)
-    return float((h - y)**2 + (w - x)**2)
+    own_moves = game.get_legal_moves(player)
+    opp_moves = game.get_legal_moves(game.get_opponent(player))
+    num_blocking_moves = 0
+    # Compute how many of my moves can be blocked by my opponent.
+    for mymove in own_moves:
+        if mymove in opp_moves:
+            num_blocking_moves += 1
+
+    # I call this metric "smart improved score" in the analysis paper.
+    return float(len(own_moves)) - float(len(opp_moves) - num_blocking_moves)
 
 
 class IsolationPlayer:
@@ -155,6 +176,7 @@ class IsolationPlayer:
         self.time_left = None
         self.TIMER_THRESHOLD = timeout
 
+        # Private variables to record the best move and the best score.
         self.best_value = float("-inf")
         self.best_move = (-1, -1)
 
@@ -166,6 +188,11 @@ class MinimaxPlayer(IsolationPlayer):
     """
 
     def _update_best_move(self, v, move):
+        """
+        A private utility method to update the best score and best move.
+        :param v: score
+        :param move: move
+        """
         if v > self.best_value:
             self.best_value = v
             self.best_move = move
@@ -178,9 +205,12 @@ class MinimaxPlayer(IsolationPlayer):
         return not bool(game_state.get_legal_moves())
 
     def _min_value(self, game_state, current_depth):
-        """ Return the value for a win (+1) if the game is over,
+        """ Returns the value for a win if the game is over,
         otherwise return the minimum value over all legal child
         nodes.
+        :param game_state: isolation.Board object
+        :param current_depth: integer, depth of the search
+        returns: minimum value over all legal child nodes.
         """
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
@@ -197,9 +227,12 @@ class MinimaxPlayer(IsolationPlayer):
         return v
 
     def _max_value(self, game_state, current_depth):
-        """ Return the value for a loss (-1) if the game is over,
+        """ Return the value for a loss if the game is over,
         otherwise return the maximum value over all legal child
         nodes.
+        :param game_state: isolation.Board object
+        :param current_depth: integer, depth of the search
+        returns: maximum value over all legal child nodes.
         """
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
@@ -249,6 +282,7 @@ class MinimaxPlayer(IsolationPlayer):
         # in case the search fails due to timeout
         self.best_move = (-1, -1)
         if game.get_legal_moves():
+            # This is important to avoid forfeiting games!
             self.best_move = game.get_legal_moves()[0]
 
         try:
@@ -318,11 +352,6 @@ class AlphaBetaPlayer(IsolationPlayer):
     make sure it returns a good move before the search time limit expires.
     """
 
-    def _update_best_move(self, v, move):
-        if v > self.best_value:
-            self.best_value = v
-            self.best_move = move
-
     def get_move(self, game, time_left):
         """Search for the best move from the available legal moves and return a
         result before the time limit expires.
@@ -363,6 +392,7 @@ class AlphaBetaPlayer(IsolationPlayer):
 
         self.best_move = (-1, -1)
         if game.get_legal_moves():
+            # This is important to avoid forfeiting games!
             self.best_move = game.get_legal_moves()[0]
 
         try:
@@ -385,9 +415,14 @@ class AlphaBetaPlayer(IsolationPlayer):
         return not bool(game_state.get_legal_moves())
 
     def _min_value(self, game_state, current_depth, alpha, beta):
-        """ Return the value for a win (+1) if the game is over,
+        """ Return the value for a win if the game is over,
         otherwise return the minimum value over all legal child
         nodes.
+        :param game_state: isolation.Board object
+        :param current_depth: integer, current depth limit
+        :param alpha: float, lowest value of max nodes
+        :param beta: float, largest value of min nodes
+        returns: minimum value over all legal child nodes
         """
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
@@ -405,9 +440,14 @@ class AlphaBetaPlayer(IsolationPlayer):
         return v
 
     def _max_value(self, game_state, current_depth, alpha, beta):
-        """ Return the value for a loss (-1) if the game is over,
+        """ Return the value for a loss if the game is over,
         otherwise return the maximum value over all legal child
         nodes.
+        :param game_state: isolation.Board object
+        :param current_depth: integer, current depth limit
+        :param alpha: float, lowest value of max nodes
+        :param beta: float, largest value of min nodes
+        returns: maximum value over all legal child nodes
         """
         if self.time_left() < self.TIMER_THRESHOLD:
             raise SearchTimeout()
